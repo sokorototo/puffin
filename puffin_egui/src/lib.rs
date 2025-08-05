@@ -399,7 +399,7 @@ impl ProfilerUi {
     fn all_known_frames<'a>(
         &'a self,
         frame_view: &'a FrameView,
-    ) -> Box<dyn Iterator<Item = &'_ Arc<FrameData>> + '_> {
+    ) -> Box<dyn Iterator<Item = &'a Arc<FrameData>> + 'a> {
         match &self.paused {
             Some(paused) => Box::new(frame_view.all_uniq().chain(paused.frames.uniq.iter())),
             None => Box::new(frame_view.all_uniq()),
@@ -619,7 +619,7 @@ impl ProfilerUi {
             Frame::dark_canvas(ui.style()).show(ui, |ui| {
                 egui::ScrollArea::horizontal()
                     .stick_to_right(true)
-                    .drag_to_scroll(false)
+                    .scroll_source(egui::scroll_area::ScrollSource::NONE)
                     .show(ui, |ui| {
                         let slowest_visible = self.show_frame_list(
                             ui,
@@ -741,14 +741,16 @@ impl ProfilerUi {
                 // preview when hovering is really annoying when viewing multiple frames
                 if is_hovered && !is_selected && !viewing_multiple_frames {
                     *hovered_frame = Some(frame.clone());
-                    egui::show_tooltip_at_pointer(
-                        ui.ctx(),
+
+                    egui::Tooltip::always_open(
+                        ui.ctx().clone(),
                         ui.layer_id(),
                         Id::new("puffin_frame_tooltip"),
-                        |ui| {
-                            ui.label(format!("{:.1} ms", frame.duration_ns() as f64 * 1e-6));
-                        },
-                    );
+                        egui::PopupAnchor::Pointer,
+                    )
+                    .show(|ui| {
+                        ui.label(format!("{:.1} ms", frame.duration_ns() as f64 * 1e-6));
+                    });
                 }
 
                 if response.dragged() {

@@ -17,26 +17,19 @@ include = ["**/*.rs", "Cargo.toml", "README.md", "icon.png"]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-puffin_egui = { version = "0.29.0", path = "../puffin_egui", features = [
-    "serde",
-] }
-puffin = { version = "0.19.1", path = "../puffin", features = [
-    "packing",
-    "serialization",
-    "lz4",
-    "zstd",          # Support zstd in order to load old puffin files (before 0.16.0)
-] }
-puffin_http = { version = "0.16.1", path = "../puffin_http" }
+puffin_egui = { path = "../puffin_egui", features = ["serde"] }
+puffin = { path = "../puffin", features = ["serialization"] }
+puffin_http = { path = "../puffin_http" }
 
 argh = "0.1"
-eframe = { version = "0.28.0", default-features = false, features = [
-    "default_fonts",
-    "glow",
-    "persistence",
+eframe = { version = "0.32", default-features = false, features = [
+	"default_fonts",
+	"glow",
+	"persistence",
 ] }
 log = "0.4"
-rfd = "0.10.0"
-env_logger = "0.10"
+rfd = "0.15"
+env_logger = "0.11"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

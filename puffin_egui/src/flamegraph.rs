@@ -260,7 +260,7 @@ pub fn ui(
 
             ui.group(|ui| {
                 ui.strong("Visible Threads");
-                egui::ScrollArea::vertical().id_source("f").show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("f").show(ui, |ui| {
                     for f in frames.threads.keys() {
                         let entry = options
                             .flamegraph_threads
@@ -779,20 +779,22 @@ fn paint_scope(
             let Some(scope_details) = info.scope_collection.fetch_by_id(&scope.id) else {
                 return Ok(PaintResult::Culled);
             };
-            egui::show_tooltip_at_pointer(
-                &info.ctx,
+
+            egui::Tooltip::always_open(
+                info.ctx.clone(),
                 info.layer_id,
                 Id::new("puffin_profiler_tooltip"),
-                |ui| {
-                    paint_scope_details(ui, scope.id, scope.record.data, scope_details);
+                egui::PopupAnchor::Pointer,
+            )
+            .show(|ui| {
+                paint_scope_details(ui, scope.id, scope.record.data, scope_details);
 
-                    ui.monospace(format!(
-                        "duration: {:7.3} ms",
-                        to_ms(scope.record.duration_ns)
-                    ));
-                    ui.monospace(format!("children: {num_children:3}"));
-                },
-            );
+                ui.monospace(format!(
+                    "duration: {:7.3} ms",
+                    to_ms(scope.record.duration_ns)
+                ));
+                ui.monospace(format!("children: {num_children:3}"));
+            });
         }
     }
 
@@ -844,14 +846,15 @@ fn paint_merge_scope(
         }
 
         if result == PaintResult::Hovered {
-            egui::show_tooltip_at_pointer(
-                &info.ctx,
+            egui::Tooltip::always_open(
+                info.ctx.clone(),
                 info.layer_id,
                 Id::new("puffin_profiler_tooltip"),
-                |ui| {
-                    merge_scope_tooltip(ui, info.scope_collection, merge, info.num_frames);
-                },
-            );
+                egui::PopupAnchor::Pointer,
+            )
+            .show(|ui| {
+                merge_scope_tooltip(ui, info.scope_collection, merge, info.num_frames);
+            });
         }
     }
 
@@ -884,7 +887,7 @@ fn paint_scope_details(ui: &mut Ui, scope_id: ScopeId, data: &str, scope_details
 
             if !data.is_empty() {
                 ui.monospace("data");
-                ui.monospace(data.as_str());
+                ui.monospace(data);
                 ui.end_row();
             }
 
