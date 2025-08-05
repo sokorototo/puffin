@@ -182,7 +182,7 @@ impl Stream {
         const MAX_STRING_LENGTH: usize = 127;
         let len = s.len().min(MAX_STRING_LENGTH);
         self.0.write_u8(len as u8).expect("can't fail");
-        self.0.extend(s[0..len].as_bytes()); // This may split a character in two. The parser should handle that.
+        self.0.extend(&s.as_bytes()[..len]); // This may split a character in two. The parser should handle that.
     }
 }
 
