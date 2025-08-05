@@ -10,6 +10,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
         ..Default::default()
     };
+
     eframe::run_simple_native("puffin egui eframe", options, move |ctx, _frame| {
         puffin::profile_function!();
         puffin::GlobalProfiler::lock().new_frame(); // If you use the `puffin` feature of `eframe` you don't need to call this

@@ -156,10 +156,7 @@ impl Drop for ProfilerScope {
 
 /// A unique id for each scope and [`ScopeDetails`].
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(
-    feature = "serialization",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "packing", derive(bincode::Decode, bincode::Encode))]
 pub struct ScopeId(pub NonZeroU32);
 
 impl ScopeId {

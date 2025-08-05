@@ -72,7 +72,7 @@ pub struct Scope<'s> {
 
 /// Stream of profiling events from one thread.
 #[derive(Clone, Default)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "packing", derive(bincode::Decode, bincode::Encode))]
 pub struct Stream(Vec<u8>);
 
 impl Stream {
@@ -188,7 +188,7 @@ impl Stream {
 
 /// A [`Stream`] plus some info about it.
 #[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "packing", derive(bincode::Decode, bincode::Encode))]
 pub struct StreamInfo {
     /// The raw profile data.
     pub stream: Stream,

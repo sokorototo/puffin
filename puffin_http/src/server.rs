@@ -353,6 +353,7 @@ impl PuffinServerImpl {
                         packet_tx: Some(packet_tx),
                         join_handle: Some(join_handle),
                     });
+
                     self.num_clients.store(self.clients.len(), Ordering::SeqCst);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
