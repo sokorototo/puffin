@@ -315,6 +315,9 @@ pub struct ProfilerUi {
     /// Used to normalize frame height in frame view
     slowest_frame: f32,
 
+    /// sort slowest frames by recency, rather than duration
+    sort_slowest_frames_by_recency: bool,
+
     /// When did we last run a pass to pack all the frames?
     #[cfg_attr(feature = "serde", serde(skip))]
     last_pack_pass: Option<web_time::Instant>,
@@ -329,6 +332,7 @@ impl Default for ProfilerUi {
             paused: None,
             max_num_latest: 1,
             slowest_frame: 0.16,
+            sort_slowest_frames_by_recency: true,
             last_pack_pass: None,
         }
     }
@@ -604,6 +608,11 @@ impl ProfilerUi {
                         stats.bytes_of_ram_used() as f64 * 1e-6
                     ));
 
+                    ui.checkbox(
+                        &mut self.sort_slowest_frames_by_recency,
+                        "Sort Slowest Frames View by Recency",
+                    );
+
                     if let Some(frame_view) = frame_view.as_mut() {
                         max_frames_ui(ui, frame_view, uniq);
                         if self.paused.is_none() {
@@ -653,7 +662,11 @@ impl ProfilerUi {
                     / self.flamegraph_options.frame_width)
                     .floor();
                 let num_fit = (num_fit as usize).at_least(1).at_most(frames.slowest.len());
-                let slowest_of_the_slow = puffin::select_slowest(&frames.slowest, num_fit);
+                let slowest_of_the_slow = puffin::select_slowest(
+                    &frames.slowest,
+                    num_fit,
+                    self.sort_slowest_frames_by_recency,
+                );
 
                 let mut slowest_frame = 0;
                 for frame in &slowest_of_the_slow {

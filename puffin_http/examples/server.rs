@@ -41,6 +41,7 @@ fn main() {
 
 fn sleep_ms(ms: usize) {
     puffin::profile_function!();
+
     match ms {
         0 => {}
         1 => std::thread::sleep(std::time::Duration::from_millis(1)),

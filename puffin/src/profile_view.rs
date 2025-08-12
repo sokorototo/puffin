@@ -231,6 +231,7 @@ impl FrameView {
         for frame in self.all_uniq() {
             frame.write_into(&self.scope_collection, false, write)?;
         }
+
         Ok(())
     }
 
@@ -239,6 +240,7 @@ impl FrameView {
     pub fn read(read: &mut impl std::io::Read) -> anyhow::Result<Self> {
         let mut magic = [0_u8; 4];
         read.read_exact(&mut magic)?;
+
         if &magic != b"PUF0" {
             anyhow::bail!("Expected .puffin magic header of 'PUF0', found {:?}", magic);
         }
@@ -247,6 +249,7 @@ impl FrameView {
             max_recent: usize::MAX,
             ..Default::default()
         };
+
         while let Some(frame) = FrameData::read_next(read)? {
             slf.add_frame(frame.into());
         }
@@ -257,17 +260,28 @@ impl FrameView {
 
 // ----------------------------------------------------------------------------
 
-/// Select the slowest frames, up to a certain count.
-pub fn select_slowest(frames: &[Arc<FrameData>], max: usize) -> Vec<Arc<FrameData>> {
+/// Select the slowest frames, up to a certain count. `sort_by_time` sorts the resulting frames by recency
+pub fn select_slowest(
+    frames: &[Arc<FrameData>],
+    max: usize,
+    sort_by_time: bool,
+) -> Vec<Arc<FrameData>> {
     let mut slowest: std::collections::BinaryHeap<OrderedByDuration> = Default::default();
+
     for frame in frames {
         slowest.push(OrderedByDuration(frame.clone()));
+
         while slowest.len() > max {
             slowest.pop();
         }
     }
-    let mut slowest: Vec<_> = slowest.drain().map(|x| x.0).collect();
-    slowest.sort_by_key(|frame| frame.frame_index());
+
+    let mut slowest = slowest.drain().map(|x| x.0).collect::<Vec<_>>();
+    match sort_by_time {
+        true => slowest.sort_by_key(|frame| frame.frame_index()),
+        false => slowest.sort_by_key(|frame| frame.duration_ns()),
+    };
+
     slowest
 }
 
