@@ -562,7 +562,7 @@ impl FrameData {
     ) -> anyhow::Result<()> {
         use byteorder::{WriteBytesExt as _, LE};
 
-        let meta_serialized = bincode::encode_to_vec(&self.meta, bincode::config::legacy())?;
+        let meta_serialized = bincode::encode_to_vec(self.meta, bincode::config::legacy())?;
 
         write.write_all(b"PFD4")?;
         write.write_all(&(meta_serialized.len() as u32).to_le_bytes())?;
@@ -755,10 +755,8 @@ impl FrameData {
                     let mut serialized_scopes = vec![0; serialized_scope_len as usize];
                     read.read_exact(&mut serialized_scopes)?;
 
-                    let (scopes, _) = bincode::decode_from_slice(
-                        &serialized_scopes.as_slice(),
-                        bincode::config::legacy(),
-                    )?;
+                    let (scopes, _) =
+                        bincode::decode_from_slice(&serialized_scopes, bincode::config::legacy())?;
                     scopes
                 };
 

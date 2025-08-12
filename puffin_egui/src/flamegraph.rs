@@ -723,7 +723,8 @@ fn paint_record(
             start_x + 4.0,
             top_y + 0.5 * (options.rect_height - info.text_height),
         );
-        let pos = painter.round_pos_to_pixels(pos);
+
+        let pos = emath::GuiRounding::round_to_pixels(pos, painter.pixels_per_point());
         const TEXT_COLOR: Color32 = Color32::BLACK;
         painter.text(
             pos,
