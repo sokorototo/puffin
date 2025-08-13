@@ -21,6 +21,7 @@
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+#![allow(clippy::uninlined_format_args)]
 
 mod data;
 mod frame_data;

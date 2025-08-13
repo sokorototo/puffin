@@ -11,6 +11,8 @@
 //! puffin::set_scopes_on(true);
 //! ```
 
+#![allow(clippy::uninlined_format_args)]
+
 /// Bumped on protocol breakage.
 pub const PROTOCOL_VERSION: u16 = 2;
 

@@ -101,7 +101,7 @@ impl GlobalProfiler {
         #[cfg(all(not(target_arch = "wasm32"), feature = "sysinfo"))]
         let metrics = self
             .pid
-            .map(|p| {
+            .and_then(|p| {
                 self.sysinfo_system
                     .refresh_processes(sysinfo::ProcessesToUpdate::Some(&[p]), false);
 
@@ -111,8 +111,7 @@ impl GlobalProfiler {
                         cpu_usage: process.cpu_usage(),
                         memory_usage: process.memory(),
                     })
-            })
-            .flatten();
+            });
 
         #[cfg(any(target_arch = "wasm32", not(feature = "sysinfo")))]
         let metrics = None;

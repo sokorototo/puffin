@@ -241,7 +241,7 @@ mod tests {
             name: "main".to_owned(),
         };
         thread_streams.insert(thread_info.clone(), stream_info);
-        let frame = UnpackedFrameData::new(0, thread_streams).unwrap();
+        let frame = UnpackedFrameData::new(0, thread_streams, None).unwrap();
         let frames = [Arc::new(frame)];
         let merged = merge_scopes_for_thread(&scope_collection, &frames, &thread_info).unwrap();
 
