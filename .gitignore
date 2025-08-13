@@ -2,3 +2,5 @@
 **/target_ra/
 **/target/
 /*.puffin
+
+.vscode

@@ -327,6 +327,9 @@ pub struct FrameData {
     /// uncompressed, compressed, or a combination of both
     data: RwLock<FrameDataState>,
 
+    /// Hardware Metrics read during this frame
+    pub metrics: Option<crate::sysinfo::HardwareMetrics>,
+
     /// Scopes that were registered during this frame.
     pub scope_delta: Vec<Arc<ScopeDetails>>,
 
@@ -470,6 +473,7 @@ impl FrameData {
             data: RwLock::new(FrameDataState::Unpacked(unpacked_frame)),
             scope_delta,
             full_delta,
+            metrics: None,
         }
     }
 
@@ -564,7 +568,11 @@ impl FrameData {
 
         let meta_serialized = bincode::encode_to_vec(self.meta, bincode::config::legacy())?;
 
-        write.write_all(b"PFD4")?;
+        match self.metrics.is_some() {
+            true => write.write_all(b"PFD5")?,
+            false => write.write_all(b"PFD4")?,
+        }
+
         write.write_all(&(meta_serialized.len() as u32).to_le_bytes())?;
         write.write_all(&meta_serialized)?;
 
@@ -586,6 +594,13 @@ impl FrameData {
             bincode::encode_to_vec(&to_serialize_scopes, bincode::config::legacy())?;
         write.write_u32::<LE>(serialized_scopes.len() as u32)?;
         write.write_all(&serialized_scopes)?;
+
+        // maybe write packed metrics
+        if let Some(m) = &self.metrics {
+            write.write_f32::<LE>(m.cpu_usage)?;
+            write.write_u64::<LE>(m.memory_usage)?;
+        };
+
         Ok(())
     }
 
@@ -701,6 +716,7 @@ impl FrameData {
                     data: RwLock::new(FrameDataState::Packed(packed_streams)),
                     scope_delta: Default::default(),
                     full_delta: false,
+                    metrics: None,
                 }))
             } else if &header == b"PFD3" {
                 // Added 2023-05-13: CompressionKind field
@@ -731,8 +747,9 @@ impl FrameData {
                     data: RwLock::new(FrameDataState::Packed(packed_streams)),
                     scope_delta: Default::default(),
                     full_delta: false,
+                    metrics: None,
                 }))
-            } else if &header == b"PFD4" {
+            } else if &header == b"PFD4" || &header == b"PFD5" {
                 // Added 2024-01-08: Split up stream scope details from the record stream.
                 let meta_length = read.read_u32::<LE>()? as usize;
                 let meta = {
@@ -765,11 +782,21 @@ impl FrameData {
                     .map(|x| Arc::new(x.clone()))
                     .collect();
 
+                // PFD4 and PFD5 are compatible, but PFD5 has hardware metrics added
+                let metrics = match &header == b"PFD5" {
+                    true => Some(crate::sysinfo::HardwareMetrics {
+                        cpu_usage: read.read_f32::<LE>()?,
+                        memory_usage: read.read_u64::<LE>()?,
+                    }),
+                    false => None,
+                };
+
                 Ok(Some(Self {
                     meta,
                     data: RwLock::new(FrameDataState::Packed(streams_compressed)),
                     scope_delta: new_scopes,
                     full_delta: false,
+                    metrics,
                 }))
             } else {
                 anyhow::bail!("Failed to decode: this data is newer than this reader. Please update your puffin version!");

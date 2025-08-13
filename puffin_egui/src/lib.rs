@@ -455,13 +455,7 @@ impl ProfilerUi {
     }
 
     fn ui_impl(&mut self, ui: &mut egui::Ui, frame_view: &mut MaybeMutRef<'_, FrameView>) {
-        let mut hovered_frame = None;
-
-        egui::CollapsingHeader::new("Frame history")
-            .default_open(false)
-            .show(ui, |ui| {
-                hovered_frame = self.show_frames(ui, frame_view);
-            });
+        let hovered_frame = self.show_frames(ui, frame_view);
 
         let frames = if let Some(frame) = hovered_frame {
             match frame.unpacked() {
@@ -492,6 +486,10 @@ impl ProfilerUi {
             return;
         };
 
+        // display line break
+        ui.separator();
+
+        // frame stats
         ui.horizontal(|ui| {
             let play_pause_button_size = Vec2::splat(24.0);
             let space_pressed = ui.input(|i| i.key_pressed(egui::Key::Space))
@@ -588,41 +586,41 @@ impl ProfilerUi {
     ) -> Option<Arc<FrameData>> {
         puffin::profile_function!();
 
+        // Get active frames
         let frames = self.frames(frame_view);
-
         let mut hovered_frame = None;
 
-        egui::Grid::new("frame_grid").num_columns(2).show(ui, |ui| {
-            ui.label("");
-            ui.horizontal(|ui| {
-                ui.label("Click to select a frame, or drag to select multiple frames.");
+        // Settings Pane
+        ui.horizontal(|ui| {
+            ui.label("Click to select a frame, or drag to select multiple frames.");
 
-                ui.menu_button("🔧 Settings", |ui| {
-                    let uniq = &frames.uniq;
-                    let stats = &frames.stats;
+            ui.menu_button("🔧 Settings", |ui| {
+                let uniq = &frames.uniq;
+                let stats = &frames.stats;
 
-                    ui.label(format!(
-                        "{} frames ({} unpacked) using approximately {:.1} MB.",
-                        stats.frames(),
-                        stats.unpacked_frames(),
-                        stats.bytes_of_ram_used() as f64 * 1e-6
-                    ));
+                ui.label(format!(
+                    "{} frames ({} unpacked) using approximately {:.1} MB.",
+                    stats.frames(),
+                    stats.unpacked_frames(),
+                    stats.bytes_of_ram_used() as f64 * 1e-6
+                ));
 
-                    ui.checkbox(
-                        &mut self.sort_slowest_frames_by_recency,
-                        "Sort Slowest Frames View by Recency",
-                    );
+                ui.checkbox(
+                    &mut self.sort_slowest_frames_by_recency,
+                    "Sort Slowest Frames View by Recency",
+                );
 
-                    if let Some(frame_view) = frame_view.as_mut() {
-                        max_frames_ui(ui, frame_view, uniq);
-                        if self.paused.is_none() {
-                            max_num_latest_ui(ui, &mut self.max_num_latest);
-                        }
+                if let Some(frame_view) = frame_view.as_mut() {
+                    max_frames_ui(ui, frame_view, uniq);
+                    if self.paused.is_none() {
+                        max_num_latest_ui(ui, &mut self.max_num_latest);
                     }
-                });
+                }
             });
-            ui.end_row();
+        });
 
+        // Frame Display
+        egui::Grid::new("frame_grid").num_columns(2).show(ui, |ui| {
             ui.label("Recent:");
 
             Frame::dark_canvas(ui.style()).show(ui, |ui| {

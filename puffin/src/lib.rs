@@ -28,6 +28,7 @@ mod global_profiler;
 mod merge;
 mod profile_view;
 mod scope_details;
+mod sysinfo;
 mod thread_profiler;
 mod utils;
 
