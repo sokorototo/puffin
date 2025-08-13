@@ -53,111 +53,144 @@ pub fn ui(
     scopes.sort_by_key(|(_key, scope_stats)| scope_stats.count);
     scopes.reverse();
 
-    egui::ScrollArea::horizontal().show(ui, |ui| {
-        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-        ui.spacing_mut().item_spacing.x = 16.0;
+    // Display Hardware Metrics
+    ui.separator();
+    ui.horizontal(|ui| {
+        let count = frames.iter().flat_map(|f| f.metrics.into_iter()).count();
+        match count > 1 {
+            true => ui.strong("Aggregated Hardware Metrics"),
+            false => ui.strong("Hardware Metrics"),
+        };
 
-        egui_extras::TableBuilder::new(ui)
-            .striped(true)
-            .columns(
-                egui_extras::Column::auto_with_initial_suggestion(200.0).resizable(true),
-                3,
-            )
-            .columns(egui_extras::Column::auto().resizable(false), 6)
-            .header(20.0, |mut header| {
-                header.col(|ui| {
-                    ui.strong("Location");
-                });
-                header.col(|ui| {
-                    ui.strong("Function Name");
-                });
-                header.col(|ui| {
-                    ui.strong("Scope Name");
-                });
-                header.col(|ui| {
-                    ui.strong("Count");
-                });
-                header.col(|ui| {
-                    ui.strong("Size");
-                });
-                header.col(|ui| {
-                    ui.strong("Total self time");
-                });
-                header.col(|ui| {
-                    ui.strong("Mean self time");
-                });
-                header.col(|ui| {
-                    ui.strong("Max self time");
-                });
-            })
-            .body(|mut body| {
-                for (key, stats) in &scopes {
-                    let Some(scope_details) = scope_infos.fetch_by_id(&key.id) else {
-                        continue;
-                    };
+        ui.separator();
+        if count == 0 {
+            ui.label("Select Frames To Display");
+            return;
+        };
 
-                    if !options.filter.is_empty() {
-                        let mut matches = options.filter.include(&scope_details.function_name);
+        // aggregate metrics
+        let total_cpu_usage = frames
+            .iter()
+            .flat_map(|f| f.metrics.into_iter())
+            .map(|m| m.cpu_usage)
+            .sum::<f32>();
+        let total_mem_usage = frames
+            .iter()
+            .flat_map(|f| f.metrics.into_iter())
+            .map(|m| m.memory_usage)
+            .sum::<u64>();
 
-                        if let Some(scope_name) = &scope_details.scope_name {
-                            matches |= options.filter.include(scope_name);
-                        }
+        // display
+        ui.label(format!("CPU Usage: {:.2}", total_cpu_usage / count as f32));
+        ui.label(format!(
+            "Avg. Mem Usage: {:.2}",
+            total_mem_usage / (count as u64)
+        ));
+        ui.label(format!("Total. Mem Usage: {:.2}", total_mem_usage));
+    });
 
-                        if !matches {
-                            continue;
-                        }
+    // display frame stats
+    ui.separator();
+    egui_extras::TableBuilder::new(ui)
+        .striped(true)
+        .columns(
+            egui_extras::Column::auto_with_initial_suggestion(200.0).resizable(true),
+            3,
+        )
+        .columns(egui_extras::Column::auto().resizable(false), 6)
+        .header(20.0, |mut header| {
+            header.col(|ui| {
+                ui.strong("Location");
+            });
+            header.col(|ui| {
+                ui.strong("Function Name");
+            });
+            header.col(|ui| {
+                ui.strong("Scope Name");
+            });
+            header.col(|ui| {
+                ui.strong("Count");
+            });
+            header.col(|ui| {
+                ui.strong("Size");
+            });
+            header.col(|ui| {
+                ui.strong("Total self time");
+            });
+            header.col(|ui| {
+                ui.strong("Mean self time");
+            });
+            header.col(|ui| {
+                ui.strong("Max self time");
+            });
+        })
+        .body(|mut body| {
+            for (key, stats) in &scopes {
+                let Some(scope_details) = scope_infos.fetch_by_id(&key.id) else {
+                    continue;
+                };
+
+                if !options.filter.is_empty() {
+                    let mut matches = options.filter.include(&scope_details.function_name);
+
+                    if let Some(scope_name) = &scope_details.scope_name {
+                        matches |= options.filter.include(scope_name);
                     }
 
-                    body.row(14.0, |mut row| {
-                        row.col(|ui| {
-                            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-                            ui.label(scope_details.location());
-                        });
-                        row.col(|ui| {
-                            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-                            ui.label(scope_details.function_name.as_str());
-                        });
-
-                        row.col(|ui| {
-                            if let Some(name) = &scope_details.scope_name {
-                                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-                                ui.label(name.as_ref());
-                            }
-                        });
-                        row.col(|ui| {
-                            let color = if stats.count < 1_000 {
-                                ui.visuals().text_color()
-                            } else if stats.count < 10_000 {
-                                ui.visuals().warn_fg_color
-                            } else {
-                                ui.visuals().error_fg_color
-                            };
-
-                            ui.label(
-                                egui::RichText::new(format!("{:>5}", stats.count))
-                                    .monospace()
-                                    .color(color),
-                            );
-                        });
-                        row.col(|ui| {
-                            ui.monospace(format!("{:>6.1} kB", stats.bytes as f32 * 1e-3));
-                        });
-                        row.col(|ui| {
-                            ui.monospace(format!("{:>8.1} µs", stats.total_self_ns as f32 * 1e-3));
-                        });
-                        row.col(|ui| {
-                            ui.monospace(format!(
-                                "{:>8.1} µs",
-                                stats.total_self_ns as f32 * 1e-3 / (stats.count as f32)
-                            ));
-                        });
-                        row.col(|ui| {
-                            ui.monospace(format!("{:>8.1} µs", stats.max_ns as f32 * 1e-3));
-                        });
-                    });
+                    if !matches {
+                        continue;
+                    }
                 }
-            });
-    });
+
+                body.row(14.0, |mut row| {
+                    row.col(|ui| {
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                        ui.label(scope_details.location());
+                    });
+                    row.col(|ui| {
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                        ui.label(scope_details.function_name.as_str());
+                    });
+
+                    row.col(|ui| {
+                        if let Some(name) = &scope_details.scope_name {
+                            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                            ui.label(name.as_ref());
+                        }
+                    });
+                    row.col(|ui| {
+                        let color = if stats.count < 1_000 {
+                            ui.visuals().text_color()
+                        } else if stats.count < 10_000 {
+                            ui.visuals().warn_fg_color
+                        } else {
+                            ui.visuals().error_fg_color
+                        };
+
+                        ui.label(
+                            egui::RichText::new(format!("{:>5}", stats.count))
+                                .monospace()
+                                .color(color),
+                        );
+                    });
+                    row.col(|ui| {
+                        ui.monospace(format!("{:>6.1} kB", stats.bytes as f32 * 1e-3));
+                    });
+                    row.col(|ui| {
+                        ui.monospace(format!("{:>8.1} µs", stats.total_self_ns as f32 * 1e-3));
+                    });
+                    row.col(|ui| {
+                        ui.monospace(format!(
+                            "{:>8.1} µs",
+                            stats.total_self_ns as f32 * 1e-3 / (stats.count as f32)
+                        ));
+                    });
+                    row.col(|ui| {
+                        ui.monospace(format!("{:>8.1} µs", stats.max_ns as f32 * 1e-3));
+                    });
+                });
+            }
+        });
 }
 
 #[derive(Default)]

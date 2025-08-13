@@ -263,9 +263,7 @@ impl Server {
             .context("Couldn't spawn thread")?;
 
         // Call the `install` function to add ourselves as a sink
-        let sink_id = sink_install(Box::new(move |frame| {
-            tx.send(frame).ok();
-        }));
+        let sink_id = sink_install(Box::new(move |frame| tx.send(frame).unwrap()));
 
         Ok(Server {
             sink_id,

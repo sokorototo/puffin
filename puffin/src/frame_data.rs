@@ -35,6 +35,8 @@ pub struct UnpackedFrameData {
     pub meta: FrameMeta,
     /// The streams of profiling data for each thread.
     pub thread_streams: ThreadStreams,
+    /// Any extracted hardware metrics
+    pub metrics: Option<crate::sysinfo::HardwareMetrics>,
 }
 
 impl UnpackedFrameData {
@@ -42,6 +44,7 @@ impl UnpackedFrameData {
     pub fn new(
         frame_index: FrameIndex,
         thread_streams: BTreeMap<ThreadInfo, StreamInfo>,
+        metrics: Option<crate::sysinfo::HardwareMetrics>,
     ) -> Result<Self> {
         let thread_streams: BTreeMap<_, _> = thread_streams
             .into_iter()
@@ -68,6 +71,7 @@ impl UnpackedFrameData {
                     num_bytes,
                     num_scopes,
                 },
+                metrics,
                 thread_streams,
             })
         } else {
@@ -455,12 +459,12 @@ impl FrameData {
         thread_streams: BTreeMap<ThreadInfo, StreamInfo>,
         scope_delta: Vec<Arc<ScopeDetails>>,
         full_delta: bool,
+        metrics: Option<crate::sysinfo::HardwareMetrics>,
     ) -> Result<Self> {
-        Ok(Self::from_unpacked(
-            Arc::new(UnpackedFrameData::new(frame_index, thread_streams)?),
-            scope_delta,
-            full_delta,
-        ))
+        let unpacked = UnpackedFrameData::new(frame_index, thread_streams, metrics)?;
+        let packed = Self::from_unpacked(Arc::new(unpacked), scope_delta, full_delta);
+
+        Ok(packed)
     }
 
     fn from_unpacked(
@@ -469,11 +473,11 @@ impl FrameData {
         full_delta: bool,
     ) -> Self {
         Self {
+            metrics: unpacked_frame.metrics.as_ref().cloned(),
             meta: unpacked_frame.meta,
             data: RwLock::new(FrameDataState::Unpacked(unpacked_frame)),
             scope_delta,
             full_delta,
-            metrics: None,
         }
     }
 
@@ -535,6 +539,7 @@ impl FrameData {
 
             Arc::new(UnpackedFrameData {
                 meta: self.meta,
+                metrics: self.metrics,
                 thread_streams: packed.unpack()?,
             })
         };
@@ -646,6 +651,7 @@ impl FrameData {
                         num_bytes,
                         num_scopes,
                     },
+                    metrics: None,
                     thread_streams,
                 }
             }

@@ -513,6 +513,7 @@ impl ProfilerUi {
                         || space_pressed
                     {
                         let latest = frame_view.latest_frame();
+
                         if let Some(latest) = latest {
                             if let Ok(latest) = latest.unpacked() {
                                 self.pause_and_select(

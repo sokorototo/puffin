@@ -35,6 +35,7 @@ pub struct GlobalProfiler {
 
 impl Default for GlobalProfiler {
     fn default() -> Self {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "sysinfo"))]
         let sysinfo_system = sysinfo::System::new_with_specifics(
             sysinfo::RefreshKind::nothing().with_processes(
                 sysinfo::ProcessRefreshKind::nothing()
@@ -51,7 +52,9 @@ impl Default for GlobalProfiler {
             propagate_all_scope_details: Default::default(),
             new_scopes: Default::default(),
             scope_collection: Default::default(),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "sysinfo"))]
             sysinfo_system,
+            #[cfg(all(not(target_arch = "wasm32"), feature = "sysinfo"))]
             pid: sysinfo::get_current_pid().ok(),
         }
     }
@@ -92,11 +95,35 @@ impl GlobalProfiler {
             scope_deltas.extend(self.scope_collection.scopes_by_id().values().cloned());
         }
 
+        println!("I am here");
+
+        // Lastly acquire hardware metrics, if feature is enabled
+        #[cfg(all(not(target_arch = "wasm32"), feature = "sysinfo"))]
+        let metrics = self
+            .pid
+            .map(|p| {
+                self.sysinfo_system
+                    .refresh_processes(sysinfo::ProcessesToUpdate::Some(&[p]), false);
+
+                self.sysinfo_system
+                    .process(p)
+                    .map(|process| crate::sysinfo::HardwareMetrics {
+                        cpu_usage: process.cpu_usage(),
+                        memory_usage: process.memory(),
+                    })
+            })
+            .flatten();
+
+        #[cfg(any(target_arch = "wasm32", not(feature = "sysinfo")))]
+        let metrics = None;
+
+        #[allow(unused_mut)]
         let mut new_frame = match FrameData::new(
             current_frame_index,
             current_frame_scope,
             scope_deltas,
             propagate_full_delta,
+            metrics,
         ) {
             Ok(new_frame) => new_frame,
             Err(Error::Empty) => {
@@ -107,20 +134,6 @@ impl GlobalProfiler {
                 return;
             }
         };
-
-        // Lastly acquire hardware metrics, if feature is enabled
-        #[cfg(all(not(target_arch = "wasm32"), feature = "sysinfo"))]
-        self.pid.inspect(|p| {
-            self.sysinfo_system
-                .refresh_processes(sysinfo::ProcessesToUpdate::Some(&[*p]), false);
-
-            if let Some(process) = self.sysinfo_system.process(*p) {
-                new_frame.metrics = Some(crate::sysinfo::HardwareMetrics {
-                    cpu_usage: process.cpu_usage(),
-                    memory_usage: process.memory(),
-                });
-            };
-        });
 
         self.add_frame(Arc::new(new_frame));
     }
