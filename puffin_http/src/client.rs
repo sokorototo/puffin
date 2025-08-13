@@ -44,41 +44,41 @@ impl Client {
             frame_view: frame_view.clone(),
         };
 
-        let _ = std::thread::Builder::new()
-            .name("http_client_thread".to_string())
-            .spawn(move || {
-                log::info!("Connecting to {}…", addr);
-                while alive.load(SeqCst) {
-                    match std::net::TcpStream::connect(&addr) {
-                        Ok(mut stream) => {
-                            *frame_view.lock() = FrameView::default();
-                            log::info!("Connected to {}", addr);
-                            connected.store(true, SeqCst);
-                            while alive.load(SeqCst) {
-                                match consume_message(&mut stream) {
-                                    Ok(frame_data) => {
-                                        frame_view
-                                            .lock()
-                                            .add_frame(std::sync::Arc::new(frame_data));
-                                    }
-                                    Err(err) => {
-                                        log::warn!(
-                                            "Connection to puffin server closed: {}",
-                                            error_display_chain(err.as_ref())
-                                        );
-                                        connected.store(false, SeqCst);
-                                        break;
-                                    }
+        smol::spawn(async move {
+            log::info!("Connecting to {}…", addr);
+
+            while alive.load(SeqCst) {
+                match std::net::TcpStream::connect(&addr) {
+                    Ok(mut stream) => {
+                        *frame_view.lock() = FrameView::default();
+                        log::info!("Connected to {}", addr);
+
+                        connected.store(true, SeqCst);
+                        while alive.load(SeqCst) {
+                            match consume_message(&mut stream) {
+                                Ok(frame_data) => {
+                                    frame_view.lock().add_frame(std::sync::Arc::new(frame_data));
+                                }
+                                Err(err) => {
+                                    log::warn!(
+                                        "Connection to puffin server closed: {}",
+                                        error_display_chain(err.as_ref())
+                                    );
+                                    connected.store(false, SeqCst);
+                                    break;
                                 }
                             }
                         }
-                        Err(err) => {
-                            log::debug!("Failed to connect to {}: {}", addr, err);
-                            std::thread::sleep(std::time::Duration::from_secs(1));
-                        }
+                    }
+
+                    Err(err) => {
+                        log::debug!("Failed to connect to {}: {}", addr, err);
+                        std::thread::sleep(std::time::Duration::from_secs(1));
                     }
                 }
-            });
+            }
+        })
+        .detach();
 
         client
     }

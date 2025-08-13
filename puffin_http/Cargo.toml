@@ -14,14 +14,14 @@ rust-version.workspace = true
 include = ["**/*.rs", "Cargo.toml", "README.md"]
 
 [dependencies]
+smol = "2.0.2"
 anyhow = "1.0"
-crossbeam-channel = "0.5"
 log = "0.4"
 parking_lot = "0.12"
 puffin = { version = "0.19.1", path = "../puffin", features = [
-    "packing",
-    "lz4",
-    "serialization",
+	"packing",
+	"lz4",
+	"serialization",
 ] }
 
 [dev-dependencies]

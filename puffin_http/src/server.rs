@@ -1,8 +1,9 @@
 use anyhow::Context as _;
 use puffin::{FrameSinkId, FrameView, GlobalProfiler};
+use smol::io::AsyncWriteExt;
 use std::{
     io::Write,
-    net::{SocketAddr, TcpListener, TcpStream},
+    net::SocketAddr,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -19,7 +20,6 @@ const MAX_FRAMES_IN_QUEUE: usize = 30;
 #[must_use = "When Server is dropped, the server is closed, so keep it around!"]
 pub struct Server {
     sink_id: FrameSinkId,
-    join_handle: Option<std::thread::JoinHandle<()>>,
     num_clients: Arc<AtomicUsize>,
     sink_remove: fn(FrameSinkId) -> (),
 }
@@ -223,53 +223,47 @@ impl Server {
         sink_install: fn(puffin::FrameSink) -> FrameSinkId,
         sink_remove: fn(FrameSinkId) -> (),
     ) -> anyhow::Result<Self> {
-        let tcp_listener = TcpListener::bind(bind_addr).context("binding server TCP socket")?;
-        tcp_listener
-            .set_nonblocking(true)
-            .context("TCP set_nonblocking")?;
+        let tcp_listener = smol::block_on(smol::net::TcpListener::bind(bind_addr))?;
 
-        // We use crossbeam_channel instead of `mpsc`,
+        // We use `smol::channel` instead of `mpsc`,
         // because on shutdown we want all frames to be sent.
         // `mpsc::Receiver` stops receiving as soon as the `Sender` is dropped,
-        // but `crossbeam_channel` will continue until the channel is empty.
-        let (tx, rx): (crossbeam_channel::Sender<Arc<puffin::FrameData>>, _) =
-            crossbeam_channel::unbounded();
+        // but `smol::channel` will continue until the channel is empty.
+        let (tx, rx) = smol::channel::unbounded::<Arc<puffin::FrameData>>();
 
         let num_clients = Arc::new(AtomicUsize::default());
         let num_clients_cloned = num_clients.clone();
 
-        let join_handle = std::thread::Builder::new()
-            .name("puffin-server".to_owned())
-            .spawn(move || {
-                let mut server_impl = PuffinServerImpl {
-                    tcp_listener,
-                    clients: Default::default(),
-                    num_clients: num_clients_cloned,
-                    send_all_scopes: false,
-                    frame_view: Default::default(),
-                };
+        // start daemon
+        smol::spawn(async move {
+            let mut server_impl = PuffinServerImpl {
+                tcp_listener,
+                clients: Default::default(),
+                num_clients: num_clients_cloned,
+                send_all_scopes: false,
+                frame_view: Default::default(),
+            };
 
-                while let Ok(frame) = rx.recv() {
-                    server_impl.frame_view.add_frame(frame.clone());
-                    if let Err(err) = server_impl.accept_new_clients() {
-                        log::warn!("puffin server failure: {}", err);
-                    }
-
-                    if let Err(err) = server_impl.send(&frame) {
-                        log::warn!("puffin server failure: {}", err);
-                    }
+            while let Ok(frame) = rx.recv().await {
+                server_impl.frame_view.add_frame(frame.clone());
+                if let Err(err) = server_impl.accept_new_clients().await {
+                    log::warn!("puffin server failure: {}", err);
                 }
-            })
-            .context("Couldn't spawn thread")?;
+
+                if let Err(err) = server_impl.send(&frame) {
+                    log::warn!("puffin server failure: {}", err);
+                }
+            }
+        })
+        .detach();
 
         // Call the `install` function to add ourselves as a sink
         let sink_id = sink_install(Box::new(move |frame| {
-            tx.send(frame).ok();
+            tx.send_blocking(frame).unwrap();
         }));
 
         Ok(Server {
             sink_id,
-            join_handle: Some(join_handle),
             num_clients,
             sink_remove,
         })
@@ -285,11 +279,6 @@ impl Drop for Server {
     fn drop(&mut self) {
         // Remove ourselves from the profiler
         (self.sink_remove)(self.sink_id);
-
-        // Take care to send everything before we shut down:
-        if let Some(join_handle) = self.join_handle.take() {
-            join_handle.join().ok();
-        }
     }
 }
 
@@ -297,28 +286,20 @@ type Packet = Arc<[u8]>;
 
 struct Client {
     client_addr: SocketAddr,
-    packet_tx: Option<crossbeam_channel::Sender<Packet>>,
-    join_handle: Option<std::thread::JoinHandle<()>>,
+    packet_tx: Option<smol::channel::Sender<Packet>>,
 }
 
 impl Drop for Client {
     fn drop(&mut self) {
-        // Take care to send everything before we shut down!
-
         // Drop the sender to signal to shut down:
-        self.packet_tx = None;
-
-        // Wait for the shutdown:
-        if let Some(join_handle) = self.join_handle.take() {
-            join_handle.join().ok();
-        }
+        let _ = self.packet_tx.take();
     }
 }
 
 /// Listens for incoming connections
 /// and streams them puffin profiler data.
 struct PuffinServerImpl {
-    tcp_listener: TcpListener,
+    tcp_listener: smol::net::TcpListener,
     clients: Vec<Client>,
     num_clients: Arc<AtomicUsize>,
     send_all_scopes: bool,
@@ -326,29 +307,22 @@ struct PuffinServerImpl {
 }
 
 impl PuffinServerImpl {
-    fn accept_new_clients(&mut self) -> anyhow::Result<()> {
+    async fn accept_new_clients(&mut self) -> anyhow::Result<()> {
         loop {
-            match self.tcp_listener.accept() {
+            match self.tcp_listener.accept().await {
                 Ok((tcp_stream, client_addr)) => {
-                    tcp_stream
-                        .set_nonblocking(false)
-                        .context("stream.set_nonblocking")?;
-
                     log::info!("{} connected", client_addr);
 
-                    let (packet_tx, packet_rx) = crossbeam_channel::bounded(MAX_FRAMES_IN_QUEUE);
+                    let (packet_tx, packet_rx) = smol::channel::bounded(MAX_FRAMES_IN_QUEUE);
 
-                    let join_handle = std::thread::Builder::new()
-                        .name("puffin-server-client".to_owned())
-                        .spawn(move || client_loop(packet_rx, client_addr, tcp_stream))
-                        .context("Couldn't spawn thread")?;
+                    // spawn async task to send packets back to client
+                    smol::spawn(client_loop(packet_rx, client_addr, tcp_stream)).detach();
 
                     // Send all scopes when new client connects.
                     self.send_all_scopes = true;
                     self.clients.push(Client {
                         client_addr,
                         packet_tx: Some(packet_tx),
-                        join_handle: Some(join_handle),
                     });
 
                     self.num_clients.store(self.clients.len(), Ordering::SeqCst);
@@ -361,6 +335,7 @@ impl PuffinServerImpl {
                 }
             }
         }
+
         Ok(())
     }
 
@@ -371,10 +346,7 @@ impl PuffinServerImpl {
         puffin::profile_function!();
 
         let mut packet = vec![];
-
-        packet
-            .write_all(&crate::PROTOCOL_VERSION.to_le_bytes())
-            .unwrap();
+        Write::write_all(&mut packet, &crate::PROTOCOL_VERSION.to_le_bytes()).unwrap();
 
         frame
             .write_into(
@@ -391,8 +363,8 @@ impl PuffinServerImpl {
             None => false,
             Some(packet_tx) => match packet_tx.try_send(packet.clone()) {
                 Ok(()) => true,
-                Err(crossbeam_channel::TrySendError::Disconnected(_)) => false,
-                Err(crossbeam_channel::TrySendError::Full(_)) => {
+                Err(smol::channel::TrySendError::Closed(_)) => false,
+                Err(smol::channel::TrySendError::Full(_)) => {
                     log::info!(
                         "puffin client {} is not accepting data fast enough; dropping a frame",
                         client.client_addr
@@ -407,19 +379,20 @@ impl PuffinServerImpl {
     }
 }
 
-fn client_loop(
-    packet_rx: crossbeam_channel::Receiver<Packet>,
+async fn client_loop(
+    packet_rx: smol::channel::Receiver<Packet>,
     client_addr: SocketAddr,
-    mut tcp_stream: TcpStream,
+    mut tcp_stream: smol::net::TcpStream,
 ) {
-    while let Ok(packet) = packet_rx.recv() {
-        if let Err(err) = tcp_stream.write_all(&packet) {
+    while let Ok(packet) = packet_rx.recv().await {
+        if let Err(err) = tcp_stream.write_all(&packet).await {
             log::info!(
                 "puffin server failed sending to {}: {} (kind: {:?})",
                 client_addr,
                 err,
                 err.kind()
             );
+
             break;
         }
     }

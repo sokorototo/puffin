@@ -759,15 +759,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-channel"
-version = "0.5.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
-dependencies = [
- "crossbeam-utils",
-]
-
-[[package]]
 name = "crossbeam-deque"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2467,13 +2458,13 @@ name = "puffin_http"
 version = "0.16.1"
 dependencies = [
  "anyhow",
- "crossbeam-channel",
  "log",
  "once_cell",
  "parking_lot",
  "paste",
  "puffin",
  "simple_logger",
+ "smol",
 ]
 
 [[package]]
@@ -2860,6 +2851,23 @@ dependencies = [
  "libc",
  "smithay-client-toolkit",
  "wayland-backend",
+]
+
+[[package]]
+name = "smol"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a33bd3e260892199c3ccfc487c88b2da2265080acb316cd920da72fdfd7c599f"
+dependencies = [
+ "async-channel",
+ "async-executor",
+ "async-fs",
+ "async-io",
+ "async-lock",
+ "async-net",
+ "async-process",
+ "blocking",
+ "futures-lite",
 ]
 
 [[package]]
