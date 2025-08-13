@@ -95,23 +95,19 @@ impl GlobalProfiler {
             scope_deltas.extend(self.scope_collection.scopes_by_id().values().cloned());
         }
 
-        println!("I am here");
-
         // Lastly acquire hardware metrics, if feature is enabled
         #[cfg(all(not(target_arch = "wasm32"), feature = "sysinfo"))]
-        let metrics = self
-            .pid
-            .and_then(|p| {
-                self.sysinfo_system
-                    .refresh_processes(sysinfo::ProcessesToUpdate::Some(&[p]), false);
+        let metrics = self.pid.and_then(|p| {
+            self.sysinfo_system
+                .refresh_processes(sysinfo::ProcessesToUpdate::Some(&[p]), false);
 
-                self.sysinfo_system
-                    .process(p)
-                    .map(|process| crate::sysinfo::HardwareMetrics {
-                        cpu_usage: process.cpu_usage(),
-                        memory_usage: process.memory(),
-                    })
-            });
+            self.sysinfo_system
+                .process(p)
+                .map(|process| crate::sysinfo::HardwareMetrics {
+                    cpu_usage: process.cpu_usage(),
+                    memory_usage: process.memory(),
+                })
+        });
 
         #[cfg(any(target_arch = "wasm32", not(feature = "sysinfo")))]
         let metrics = None;

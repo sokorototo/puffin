@@ -560,7 +560,7 @@ impl ProfilerUi {
         ui.horizontal(|ui| {
             ui.label("View:");
             ui.selectable_value(&mut self.view, View::Flamegraph, "Flamegraph");
-            ui.selectable_value(&mut self.view, View::Stats, "Table");
+            ui.selectable_value(&mut self.view, View::Stats, "Stats");
         });
 
         match self.view {

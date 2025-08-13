@@ -81,12 +81,17 @@ pub fn ui(
             .sum::<u64>();
 
         // display
-        ui.label(format!("CPU Usage: {:.2}", total_cpu_usage / count as f32));
         ui.label(format!(
-            "Avg. Mem Usage: {:.2}",
+            "CPU Usage: {:.2}%",
+            (total_cpu_usage / count as f32) * 100.0
+        ));
+        ui.separator();
+        ui.label(format!(
+            "Avg. Mem Usage: {:.2} bytes",
             total_mem_usage / (count as u64)
         ));
-        ui.label(format!("Total. Mem Usage: {:.2}", total_mem_usage));
+        ui.separator();
+        ui.label(format!("Total. Mem Usage: {:.2} bytes", total_mem_usage));
     });
 
     // display frame stats
