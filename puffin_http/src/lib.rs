@@ -1,3 +1,5 @@
+#![allow(clippy::uninlined_format_args)]
+
 //! `puffin_server` is a library for streaming `puffin` profiler data over TCP.
 //!
 //! # How to use

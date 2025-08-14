@@ -44,11 +44,7 @@ pub fn ui(
 
     options.filter.ui(ui);
 
-    let mut scopes: Vec<_> = stats
-        .scopes
-        .into_iter()
-        .map(|(key, value)| (key, value))
-        .collect();
+    let mut scopes: Vec<_> = stats.scopes.into_iter().collect();
 
     scopes.sort_by_key(|(key, _)| key.clone());
     scopes.sort_by_key(|(_key, scope_stats)| scope_stats.len());

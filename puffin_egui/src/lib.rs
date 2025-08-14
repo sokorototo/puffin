@@ -9,7 +9,11 @@
 
 #![forbid(unsafe_code)]
 // crate-specific exceptions:
-#![allow(clippy::float_cmp, clippy::manual_range_contains)]
+#![allow(
+    clippy::float_cmp,
+    clippy::manual_range_contains,
+    clippy::uninlined_format_args
+)]
 
 mod filter;
 mod flamegraph;
