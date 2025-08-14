@@ -27,8 +27,8 @@ pub fn ui(
     let mut total_bytes = 0;
     let mut total_ns = 0;
     for scope in stats.scopes.values() {
-        total_bytes += scope.bytes;
-        total_ns += scope.total_self_ns;
+        total_bytes += scope.iter().map(|s| s.bytes).sum::<usize>();
+        total_ns += scope.iter().map(|s| s.self_time).sum::<i64>();
     }
 
     ui.label("This view can be used to find functions that are called a lot.\n\
@@ -46,11 +46,12 @@ pub fn ui(
 
     let mut scopes: Vec<_> = stats
         .scopes
-        .iter()
-        .map(|(key, value)| (key, *value))
+        .into_iter()
+        .map(|(key, value)| (key, value))
         .collect();
-    scopes.sort_by_key(|(key, _)| *key);
-    scopes.sort_by_key(|(_key, scope_stats)| scope_stats.count);
+
+    scopes.sort_by_key(|(key, _)| key.clone());
+    scopes.sort_by_key(|(_key, scope_stats)| scope_stats.len());
     scopes.reverse();
 
     egui::ScrollArea::horizontal().show(ui, |ui| {
@@ -78,9 +79,6 @@ pub fn ui(
                     ui.strong("Count");
                 });
                 header.col(|ui| {
-                    ui.strong("Size");
-                });
-                header.col(|ui| {
                     ui.strong("Total self time");
                 });
                 header.col(|ui| {
@@ -89,9 +87,26 @@ pub fn ui(
                 header.col(|ui| {
                     ui.strong("Max self time");
                 });
+                header.col(|ui| {
+                    ui.strong("Variance");
+                });
+                header.col(|ui| {
+                    ui.strong("P99");
+                });
             })
             .body(|mut body| {
                 for (key, stats) in &scopes {
+                    // calculate measures of central tendency
+                    let Some((count, mean, population_variance, ..)) =
+                        welford_variance(stats.iter().map(|s| s.self_time))
+                    else {
+                        return;
+                    };
+
+                    let percentile_99 =
+                        percentile_interpolated(stats.iter().map(|s| s.self_time), 0.99)
+                            .unwrap_or(0.0);
+
                     let Some(scope_details) = scope_infos.fetch_by_id(&key.id) else {
                         continue;
                     };
@@ -125,34 +140,39 @@ pub fn ui(
                             }
                         });
                         row.col(|ui| {
-                            let color = if stats.count < 1_000 {
+                            let color = if stats.len() < 1_000 {
                                 ui.visuals().text_color()
-                            } else if stats.count < 10_000 {
+                            } else if stats.len() < 10_000 {
                                 ui.visuals().warn_fg_color
                             } else {
                                 ui.visuals().error_fg_color
                             };
 
                             ui.label(
-                                egui::RichText::new(format!("{:>5}", stats.count))
+                                egui::RichText::new(format!("{:>5}", count))
                                     .monospace()
                                     .color(color),
                             );
                         });
+
                         row.col(|ui| {
-                            ui.monospace(format!("{:>6.1} kB", stats.bytes as f32 * 1e-3));
+                            ui.monospace(format!("{:>8.1} µs", (count as f64) * mean * 1e-3));
                         });
                         row.col(|ui| {
-                            ui.monospace(format!("{:>8.1} µs", stats.total_self_ns as f32 * 1e-3));
+                            ui.monospace(format!("{:>8.1} µs", mean));
                         });
                         row.col(|ui| {
                             ui.monospace(format!(
                                 "{:>8.1} µs",
-                                stats.total_self_ns as f32 * 1e-3 / (stats.count as f32)
+                                stats.iter().map(|s| s.self_time).max().unwrap_or(0) as f32 * 1e-3
                             ));
                         });
+
                         row.col(|ui| {
-                            ui.monospace(format!("{:>8.1} µs", stats.max_ns as f32 * 1e-3));
+                            ui.monospace(format!("{:>8.1}", population_variance));
+                        });
+                        row.col(|ui| {
+                            ui.monospace(format!("{:>8.1}", percentile_99));
                         });
                     });
                 }
@@ -162,7 +182,7 @@ pub fn ui(
 
 #[derive(Default)]
 struct Stats {
-    scopes: std::collections::HashMap<Key, ScopeStats>,
+    scopes: std::collections::HashMap<Key, Vec<ScopeStats>>,
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -172,14 +192,8 @@ struct Key {
 
 #[derive(Copy, Clone, Default)]
 struct ScopeStats {
-    count: usize,
     bytes: usize,
-    /// Time covered by all scopes, minus those covered by child scopes.
-    /// A lot of time == useful scope.
-    total_self_ns: NanoSecond,
-    /// Time covered by the slowest scope, minus those covered by child scopes.
-    /// A lot of time == useful scope.
-    max_ns: NanoSecond,
+    self_time: NanoSecond,
 }
 
 fn collect_stream(stats: &mut Stats, stream: &puffin::Stream) -> puffin::Result<()> {
@@ -205,10 +219,10 @@ fn collect_scope<'s>(
 
     let key = Key { id: scope.id };
     let scope_stats = stats.scopes.entry(key).or_default();
-    scope_stats.count += 1;
-    scope_stats.bytes += scope_byte_size(scope);
-    scope_stats.total_self_ns += self_time;
-    scope_stats.max_ns = scope_stats.max_ns.max(self_time);
+    scope_stats.push(ScopeStats {
+        bytes: scope_byte_size(scope),
+        self_time,
+    });
 
     Ok(())
 }
@@ -221,4 +235,59 @@ fn scope_byte_size(scope: &puffin::Scope<'_>) -> usize {
     8 + // scope size
     1 + // `)` sentinel
     8 // stop time
+}
+
+pub fn welford_variance<T: Iterator<Item = i64>>(data: T) -> Option<(usize, f64, f64, f64)> {
+    let mut n: usize = 0;
+    let mut mean: f64 = 0.0;
+    let mut m2: f64 = 0.0;
+
+    for x in data {
+        n += 1;
+        let delta = (x as f64) - mean;
+        mean += delta / n as f64;
+        let delta2 = (x as f64) - mean;
+        m2 += delta * delta2;
+    }
+
+    if n == 0 {
+        return None;
+    }
+
+    let pop_var = m2 / n as f64;
+    let sample_var = if n > 1 {
+        m2 / (n as f64 - 1.0)
+    } else {
+        f64::NAN
+    };
+
+    Some((n, mean, pop_var, sample_var))
+}
+
+pub fn percentile_interpolated<T: Iterator<Item = i64>>(data: T, p: f64) -> Option<f64> {
+    if !(0.0..=1.0).contains(&p) {
+        return None;
+    }
+    let mut v: Vec<f64> = data.map(|x| x as f64).collect();
+    if v.is_empty() {
+        return None;
+    }
+
+    v.sort_by(|a, b| a.total_cmp(b));
+
+    let n = v.len();
+    if n == 1 {
+        return Some(v[0]);
+    }
+
+    // position in [0, n-1]
+    let pos = p * (n as f64 - 1.0);
+    let lo = pos.floor() as usize;
+    let hi = pos.ceil() as usize;
+    if lo == hi {
+        Some(v[lo])
+    } else {
+        let frac = pos - lo as f64;
+        Some(v[lo] + frac * (v[hi] - v[lo]))
+    }
 }
